@@ -29,6 +29,18 @@ sudo service elasticsearch start
 brew services start elastic/tap/elasticsearch-full
 ```
 
+### ELasticsearch yml location
+```
+cd /opt/homebrew/etc/elasticsearch/
+```
+
+### Commands to start rabbitmq
+#### rabbitmq will run in: http://localhost:15672/#/
+```
+rabbitmq-server   
+```
+
+
 ### Commands to start Kibana
 #### Kibana will run in http://localhost:5601/
 1. Add the below to the kibana.yml file
