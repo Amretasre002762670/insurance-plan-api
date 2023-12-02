@@ -24,36 +24,39 @@ async function updateParentDocument(indexName, data) {
 
 async function updateChildDocuments(indexName, child, parentId) {
     try {
-        await esClient.update({
+        await esClient.index({
             index: indexName,
-            type: '_doc',
+            // type: '_doc',
             id: child.objectId,
             body: {
                 doc: child,
+                plan_join: { name: 'linkedPlanServices', parent: `${parentId}` },
             },
             routing: parentId,
             refresh: 'wait_for',
         });
 
         // Update linkedService
-        await esClient.update({
+        await esClient.index({
             index: indexName,
-            type: '_doc',
+            // type: '_doc',
             id: child.linkedService.objectId,
             body: {
                 doc: child.linkedService,
+                plan_join: { name: 'linkedService', parent: `${child.objectId}` },
             },
             routing: child.objectId,
             refresh: 'wait_for',
         });
 
         // Update planserviceCostShares
-        await esClient.update({
+        await esClient.index({
             index: indexName,
-            type: '_doc',
+            // type: '_doc',
             id: child.planserviceCostShares.objectId,
             body: {
                 doc: child.planserviceCostShares,
+                plan_join: { name: 'planserviceCostShares', parent: `${child.objectId}` },
             },
             routing: child.linkedService.objectId,
             refresh: 'wait_for',
@@ -77,16 +80,18 @@ async function patchAndUpdateElasticsearch(data) {
     //     }
     //   }
 
-    await esClient.index({
-        index: indexName,
-        type: '_doc',
-        id: data.update.objectId,
-        body: {
-            doc: data.update,
-        },
-        routing:  data.planID,
-        refresh: 'wait_for',
-    });
+    await updateChildDocuments(indexName, data.update, data.planID);
+
+    // await esClient.index({
+    //     index: indexName,
+    //     type: '_doc',
+    //     id: data.update.objectId,
+    //     body: {
+    //         doc: data.update,
+    //     },
+    //     routing:  data.planID,
+    //     refresh: 'wait_for',
+    // });
 
     // console.log(`Document created successfully for ID: ${child.objectId}`)
 

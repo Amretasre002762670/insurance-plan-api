@@ -11,7 +11,7 @@ const indexParentDocument = async (indexName, data) => {
     id: data.objectId,
     body: {
       ...data,
-      join_field: { name: 'plan' },
+      plan_join: { name: 'plan' },
     },
     refresh: 'wait_for',
   });
@@ -20,11 +20,11 @@ const indexParentDocument = async (indexName, data) => {
 const indexPlanCostShares = async (indexName, planCostShares, parentId) => {
   await esClient.index({
     index: indexName,
-    type: '_doc',
+    // type: '_doc',
     id: planCostShares.objectId,
     body: {
       ...planCostShares,
-      join_field: { name: 'planCostShares', parent: 'plan' },
+      plan_join: { name: 'planCostShares', parent: `${parentId}` },
     },
     routing: parentId,
     refresh: 'wait_for',
@@ -34,11 +34,11 @@ const indexPlanCostShares = async (indexName, planCostShares, parentId) => {
 const indexLinkedPlanService = async (indexName, child, parentId) => {
   await esClient.index({
     index: indexName,
-    type: '_doc',
+    // type: '_doc',
     id: child.objectId,
     body: {
       ...child,
-      join_field: { name: 'linkedPlanServices', parent: 'plan' },
+      plan_join: { name: 'linkedPlanServices', parent: `${parentId}` },
     },
     routing: parentId,
     refresh: 'wait_for',
@@ -47,11 +47,11 @@ const indexLinkedPlanService = async (indexName, child, parentId) => {
   // Index linkedService
   await esClient.index({
     index: indexName,
-    type: '_doc',
+    // type: '_doc',
     id: child.linkedService.objectId,
     body: {
       ...child.linkedService,
-      join_field: { name: 'linkedService', parent: 'planservice' },
+      plan_join: { name: 'linkedService', parent: `${child.objectId}` },
     },
     routing: child.objectId,
     refresh: 'wait_for',
@@ -60,11 +60,11 @@ const indexLinkedPlanService = async (indexName, child, parentId) => {
   // Index planserviceCostShares
   await esClient.index({
     index: indexName,
-    type: '_doc',
+    // type: '_doc',
     id: child.planserviceCostShares.objectId,
     body: {
       ...child.planserviceCostShares,
-      join_field: { name: 'planserviceCostShares', parent: 'planservice' },
+      plan_join: { name: 'planserviceCostShares', parent: `${child.objectId}` },
     },
     routing: child.linkedService.objectId,
     refresh: 'wait_for',
@@ -165,13 +165,16 @@ const createIndex = async (data) => {
             copay: { type: 'integer' },
             creationDate: { type: 'text', fields: { keyword: { type: 'keyword', ignore_above: 256 } } },
             deductible: { type: 'integer' },
-            join_field: {
+            plan_join: {
               type: 'join',
               eager_global_ordinals: true,
               relations: {
+                // planservice: ['linkedService', 'planserviceCostShares'],
+                // plan: ['planCostShares', 'linkedPlanServices'],
+                // linkedPlanServices: ["planservice"],
                 linkedPlanServices: ['linkedService', 'planserviceCostShares'],
                 plan: ['planCostShares', 'linkedPlanServices'],
-                // planserviceCostShares: ['plan', 'linkedService'],
+                // linkedPlanServices: ["planservice"],
               },
             },
             linkedService: {
