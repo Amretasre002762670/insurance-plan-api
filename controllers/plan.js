@@ -2,6 +2,66 @@ const objectHash = require('object-hash');
 
 const { validateFullPlan } = require("../validator/planFullValidator.js");
 const { validateLinkedPlanService } = require("../validator/linkedPlanServiceValidator.js");
+const redisProducer = require("../producers/redisProducer");
+const redisConsumer = require("../consumer/redisToElastic");
+const { indexDataWithParentChild } = require('../consumer/indexParentChild.js');
+const { pushToQueue } = require("../producers/rabbitMqProducser")
+
+
+const redisConsumerCallback = (data) => {
+    console.log("call to redis consumer ", data)
+    const parsedData = JSON.parse(data);
+    if (parsedData != undefined) indexDataWithParentChild(parsedData);
+};
+
+const startConsumerAsync = (client, callback) => {
+    return new Promise((resolve, reject) => {
+        redisConsumer.startConsumer(client, (data) => {
+            callback(data);
+            resolve(); // Resolve the promise when the operation is complete
+        });
+    });
+};
+
+const addQueue = async (plan, client) => {
+    console.log("Inside add queue");
+    try {
+        await client.rPush('plan', JSON.stringify(plan))
+            .then(async () => {
+                console.log("Plan pushed to queue");
+                // redisConsumer.startConsumer(client, async (dataString) => {
+                //     console.log("inside call back: ", dataString);
+                //     const data = JSON.parse(dataString);
+
+                //     // Assuming you have the indexDataWithParentChild function available
+                //     await indexDataWithParentChild(data);
+                // });
+                redisConsumer.startConsumer(client);
+            })
+            .catch((err) => {
+                console.log("Error in pushing to queue: ", err);
+            })
+
+        // if (result) {
+        //     console.log('Adding to QUEUE Operation successful:', result);
+
+        //     // Start consumer and pass the callback function
+        //     if (isConnected) {
+        //         console.log("Redis consumer connected");
+        //         redisConsumer.startConsumer(client, async (dataString) => {
+        //             console.log("inside call back: ", dataString);
+        //             const data = JSON.parse(dataString);
+
+        //             // Assuming you have the indexDataWithParentChild function available
+        //             await indexDataWithParentChild(data);
+        //         });
+        //     }
+        // }
+    } catch (error) {
+        console.error('Operation failed:', error);
+    }
+};
+
 
 
 const addLinkedPlanService = async (client, linkedPlanServices, res) => {
@@ -13,31 +73,40 @@ const addLinkedPlanService = async (client, linkedPlanServices, res) => {
             if (service.linkedService) {
                 const linkedService_id = service.linkedService.objectId;
                 serviceObj.linkedService = linkedService_id;
-                client.set(`linkedService-${linkedService_id}`, JSON.stringify(service.linkedService))
+                await client.set(`linkedService-${linkedService_id}`, JSON.stringify(service.linkedService))
                     .then(() => {
+                        console.log("\n");
                         console.log("linkedService added");
                     }).catch((err) => {
                         console.error('Error storing linkedService data in Redis:', err);
-                        res.status(500).json({ error: 'Internal Server Error for linkedService' });
+                        return res.status(500).json({ error: 'Internal Server Error for linkedService' });
                     })
             }
             if (service.planserviceCostShares) {
                 const planserviceCostShares_id = service.planserviceCostShares.objectId;
                 serviceObj.planserviceCostShares = planserviceCostShares_id;
-                client.set(`planserviceCostShares-${planserviceCostShares_id}`, JSON.stringify(service.planserviceCostShares))
+                await client.set(`planserviceCostShares-${planserviceCostShares_id}`, JSON.stringify(service.planserviceCostShares))
                     .then(() => {
                         console.log("planserviceCostShares added");
                     }).catch((err) => {
                         console.error('Error storing planserviceCostShares data in Redis:', err);
-                        res.status(500).json({ error: 'Internal Server Error for planserviceCostShares' });
+                        return res.status(500).json({ error: 'Internal Server Error for planserviceCostShares' });
                     })
             }
             serviceObj._org = service._org;
             serviceObj.objectId = service_id;
             serviceObj.objectType = service.objectType;
+            // await client.set(`planservice-${service_id}`, JSON.stringify(serviceObj))
+            //         .then(() => {
+            //             console.log("planservice added");
+            //         }).catch((err) => {
+            //             console.error('Error storing planservice data in Redis:', err);
+            //             return res.status(500).json({ error: 'Internal Server Error for planserviceCostShares' });
+            //         })
             // console.log(serviceObj, "service objs");
             linkedPlanServiceArr.push(serviceObj);
         }
+        // await redisProducer.addToQueue(client, linkedPlanServiceArr);
     }
     // console.log(linkedPlanServiceArr)
 
@@ -198,7 +267,6 @@ const postPlan = async (req, res, client) => {
 
         const isPlanValid = validateFullPlan(req.body);
 
-
         if (!isPlanValid) {
             res.status(400).json({
                 status: 'Bad Request',
@@ -209,19 +277,32 @@ const postPlan = async (req, res, client) => {
             const plan_id = req.body.objectId;
             const planCostShares_id = req.body.planCostShares.objectId;
             // const linkedPlanServices_id = req.body.linkedPlanServices.objectId;
+            const planToElastic = JSON.parse(JSON.stringify(req.body));
+
+            pushToQueue(planToElastic);
+
             const etag = objectHash(req.body);
             let plan = req.body;
+            // let planToElastic = plan;
+            // await client.rPush('plan', JSON.stringify(planToElastic))
+            // .then(() => {
+
+            // })
 
             client.set(`planCostShares-${plan_id}`, JSON.stringify(planCostShares))
                 .then(async () => {
+                    // console.log("added plancostshares");
                     plan.planCostShares = `planCostShares-${planCostShares_id}`;
                     const linkedPlanServicesArr = await addLinkedPlanService(client, linkedPlanServices, res);
                     client.set(`linkedPlanServices-${plan_id}`, JSON.stringify(linkedPlanServicesArr))
                         .then(() => {
+                            // console.log("added linkedPlanServices");
                             plan.linkedPlanServices = linkedPlanServicesArr;
                             // console.log(plan, "plan");
                             client.set(`plan-${plan_id}`, JSON.stringify(plan))
-                                .then(() => {
+                                .then(async () => {
+
+                                    // console.log("added plan");
                                     // res.setHeader("Etag", objectHash(plan));
                                     console.log('Data stored in Redis successfully');
                                     // const etag = objectHash(JSON.stringify(plan));
@@ -230,6 +311,15 @@ const postPlan = async (req, res, client) => {
                                     res.status(201).json({
                                         message: 'Plan created successfully'
                                     });
+                                    // redisConsumer.startConsumer(client);
+                                    // await client.rPush('plan', JSON.stringify(planToElastic))
+                                    //     .then(async () => {
+                                    //         console.log("Plan pushed to queue");
+                                    //         redisConsumer.startConsumer(client);
+                                    //     })
+                                    //     .catch((err) => {
+                                    //         console.log("Error in pushing to queue: ", err);
+                                    //     })
                                 })
                                 .catch(() => {
                                     console.error('Error storing plan data in Redis:', planErr);
@@ -378,10 +468,6 @@ const addLinkedPlan = async (req, res, client) => {
             }
         }
 
-
-
-
-
     } catch (err) {
         console.log(err);
         return res.status(500).json({
@@ -405,7 +491,6 @@ const conditionalAddLinkedPlanService = async (req, res, client) => {
             })
         } else {
             const addLinkedPlanService = {};
-
             // Retrieve the existing plan from Redis
             const existingPlan = await client.get(`plan-${plan_id}`);
             if (!existingPlan) {
@@ -446,12 +531,33 @@ const conditionalAddLinkedPlanService = async (req, res, client) => {
                         });
                     } else {
                         parsedLinkedPlanServices.push(newLinkedPlanService);
-                        // existingPlan.linkedPlanServices = parsedLinkedPlanServices;
-                        plan.linkedPlanServices = parsedLinkedPlanServices;
-                        console.log(plan, " updated plan");
-                        // console.log(existingPlan, " updated existing plan");
-                        const etag = objectHash(plan)
                         console.log(parsedLinkedPlanServices, "Added linked plan service to actual object");
+
+                        plan.linkedPlanServices = parsedLinkedPlanServices;
+
+                        // Declare the visited set
+                        const visited = new WeakSet();
+
+                        // Create a custom replacer function to handle circular references
+                        const replacer = (key, value) => {
+                            if (typeof value === 'object' && value !== null) {
+                                if (visited.has(value)) {
+                                    return '[Circular]';
+                                }
+                                visited.add(value);
+                            }
+                            return value;
+                        };
+
+                        // const dataToQueue = JSON.parse(JSON.stringify(parsedLinkedPlanServices, replacer));
+                        const dataToQueue = JSON.parse(JSON.stringify(req.body));
+
+
+                        console.log("dataToQueue", dataToQueue);
+                        pushToQueue({ type: 'update', planID: plan.objectId, update: dataToQueue });
+
+                        console.log(plan, " updated plan");
+                        const etag = objectHash(plan)
                         // Handle linkedService update or addition
                         if (newLinkedPlanService.linkedService) {
                             const linkedService = newLinkedPlanService.linkedService;
@@ -492,9 +598,9 @@ const conditionalAddLinkedPlanService = async (req, res, client) => {
                                 console.log("planserviceCostShares added/updated in Redis");
                                 plan.linkedPlanServices = existingLinkedPlanServices;
                                 client.set(`plan-${plan.objectId}`, JSON.stringify(plan))
-                                    .then(() => {
+                                    .then(async () => {
                                         console.log('Data stored in Redis successfully');
-                                        res.set("ETag", etag)
+                                        res.set("ETag", etag);
                                         return res.status(200).json({
                                             message: 'Updated plan with new LinkedPlanService'
                                         });
