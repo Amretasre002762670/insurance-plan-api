@@ -7,7 +7,7 @@ const esClient = new Client({
 
 async function updateParentDocument(indexName, data) {
     try {
-        await esClient.update({
+        await esClient.index({
             index: indexName,
             id: data.objectId,
             body: {
@@ -22,27 +22,167 @@ async function updateParentDocument(indexName, data) {
     }
 }
 
+// async function updateChildDocuments(indexName, child, parentId) {
+//     try {
+//         await esClient.index({
+//             index: indexName,
+//             // type: '_doc',
+//             id: child.objectId,
+//             body: {
+//                 ...child,
+//                 plan_join: { name: 'linkedPlanServices', parent: `${parentId}` },
+//             },
+//             routing: parentId,
+//             refresh: 'wait_for',
+//         });
+
+//         // Update linkedService
+//         await esClient.index({
+//             index: indexName,
+//             // type: '_doc',
+//             id: child.linkedService.objectId,
+//             body: {
+//                 ...child.linkedService,
+//                 plan_join: { name: 'linkedService', parent: `${child.objectId}` },
+//             },
+//             routing: child.objectId,
+//             refresh: 'wait_for',
+//         });
+
+//         // Update planserviceCostShares
+//         await esClient.index({
+//             index: indexName,
+//             // type: '_doc',
+//             id: child.planserviceCostShares.objectId,
+//             body: {
+//                 ...child.planserviceCostShares,
+//                 plan_join: { name: 'planserviceCostShares', parent: `${child.objectId}` },
+//             },
+//             routing: child.objectId,
+//             refresh: 'wait_for',
+//         });
+
+//         console.log(`Child documents updated successfully for linkedPlanServices ID: ${child.objectId}`);
+//     } catch (error) {
+//         console.error(`Error updating child documents for linkedPlanServices ID '${child.objectId}': ${error}`);
+//     }
+// }
+
 async function updateChildDocuments(indexName, child, parentId) {
     try {
+        // Retrieve the existing document
+        const existingDoc = await esClient.get({
+            index: indexName,
+            id: parentId,
+        });
+
+        // Modify the linkedPlanServices array
+        if (!existingDoc._source.linkedPlanServices) {
+            existingDoc._source.linkedPlanServices = [];
+        }
+        existingDoc._source.linkedPlanServices.push(child);
+
+        // Update the document with the modified linkedPlanServices array
+        // await esClient.index({
+        //     index: indexName,
+        //     id: parentId,
+        //     body: {
+        //         ...existingDoc._source,
+        //     },
+        //     refresh: 'wait_for',
+        // });
+
+        // await esClient.index({
+        //     index: indexName,
+        //     // type: '_doc',
+        //     id: child.objectId,
+        //     body: {
+        //         ...child,
+        //         plan_join: { name: 'linkedPlanServices', parent: `${parentId}` },
+        //     },
+        //     routing: parentId,
+        //     refresh: 'wait_for',
+        // });
+
+        // // Update linkedService
+        // await esClient.index({
+        //     index: indexName,
+        //     // type: '_doc',
+        //     id: child.linkedService.objectId,
+        //     body: {
+        //         ...child.linkedService,
+        //         plan_join: { name: 'linkedService', parent: `${child.objectId}` },
+        //     },
+        //     routing: child.objectId,
+        //     refresh: 'wait_for',
+        // });
+
+        // // Update planserviceCostShares
+        // await esClient.index({
+        //     index: indexName,
+        //     // type: '_doc',
+        //     id: child.planserviceCostShares.objectId,
+        //     body: {
+        //         ...child.planserviceCostShares,
+        //         plan_join: { name: 'planserviceCostShares', parent: `${child.objectId}` },
+        //     },
+        //     routing: child.objectId,
+        //     refresh: 'wait_for',
+        // });
+
+        // Update the document with the modified linkedPlanServices array
+        await esClient.index({
+            index: indexName,
+            id: parentId,
+            body: {
+                ...existingDoc._source,
+            },
+            routing: parentId,   
+            refresh: 'wait_for',
+        });
+
         await esClient.index({
             index: indexName,
             // type: '_doc',
             id: child.objectId,
             body: {
-                doc: child,
-                plan_join: { name: 'linkedPlanServices', parent: `${parentId}` },
+              ...child,
+              plan_join: { name: 'linkedPlanServices', parent: `${parentId}` },
             },
             routing: parentId,
             refresh: 'wait_for',
-        });
+          });
+
+        // Update linkedService
+        // await esClient.index({
+        //     index: indexName,
+        //     id: child.objectId,
+        //     body: {
+        //         ...child,
+        //         plan_join: { name: 'linkedService', parent: `${parentId}` },
+        //     },
+        //     routing: parentId,
+        //     refresh: 'wait_for',
+        // });
+
+        // Now, update the child documents
+        // await esClient.index({
+        //     index: indexName,
+        //     id: child.objectId,
+        //     body: {
+        //         ...child,
+        //         plan_join: { name: 'linkedPlanServices', parent: `${parentId}` },
+        //     },
+        //     routing: parentId,
+        //     refresh: 'wait_for',
+        // });
 
         // Update linkedService
         await esClient.index({
             index: indexName,
-            // type: '_doc',
             id: child.linkedService.objectId,
             body: {
-                doc: child.linkedService,
+                ...child.linkedService,
                 plan_join: { name: 'linkedService', parent: `${child.objectId}` },
             },
             routing: child.objectId,
@@ -52,15 +192,15 @@ async function updateChildDocuments(indexName, child, parentId) {
         // Update planserviceCostShares
         await esClient.index({
             index: indexName,
-            // type: '_doc',
             id: child.planserviceCostShares.objectId,
             body: {
-                doc: child.planserviceCostShares,
+                ...child.planserviceCostShares,
                 plan_join: { name: 'planserviceCostShares', parent: `${child.objectId}` },
             },
-            routing: child.linkedService.objectId,
+            routing: child.objectId,
             refresh: 'wait_for',
         });
+
 
         console.log(`Child documents updated successfully for linkedPlanServices ID: ${child.objectId}`);
     } catch (error) {
@@ -68,12 +208,11 @@ async function updateChildDocuments(indexName, child, parentId) {
     }
 }
 
+
 async function patchAndUpdateElasticsearch(data) {
     let indexName = "plan";
     console.log("data inside Patch", data.update);
-    //   await updateParentDocument(indexName, data);
-
-    //   //Update child documents in Elasticsearch
+    //Update child documents in Elasticsearch
     //   if (data.update && data.update.length > 0) {
     //     for (const child of data.update) {
     //       await updateChildDocuments(indexName, child, data.planID);

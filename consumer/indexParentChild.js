@@ -66,7 +66,7 @@ const indexLinkedPlanService = async (indexName, child, parentId) => {
       ...child.planserviceCostShares,
       plan_join: { name: 'planserviceCostShares', parent: `${child.objectId}` },
     },
-    routing: child.linkedService.objectId,
+    routing: child.objectId,
     refresh: 'wait_for',
   });
 };
